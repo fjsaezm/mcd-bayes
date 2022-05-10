@@ -82,7 +82,7 @@ def sample_latent_variables_from_posterior(encoder_output):
     mean, log_std = encoder_output[:, :D], encoder_output[:, D:]
 
     # This is equation 15 form the given assignment
-    sampled = mean + np.multiply(np.exp(log_std), np.random.randn(mean.shape))
+    sampled = mean + np.multiply(np.exp(log_std), np.random.randn(mean.shape[0], mean.shape[1]))
 
     return sampled
 
@@ -128,10 +128,10 @@ def compute_KL(q_means_and_log_stds):
     mean, log_std = q_means_and_log_stds[:, :D], q_means_and_log_stds[:, D:]
 
     # This is equation 12 form the given assignment
-    kl_divergence = [
-        0.5 * np.sum(np.exp(log_std_row) + mean_row**2 - 1 - log_std_row)
+    kl_divergence = np.array([
+        0.5 * np.sum(np.exp(log_std_row) + np.square(mean_row)**2 - 1 - log_std_row)
         for mean_row, log_std_row in zip(mean, log_std)
-    ]
+    ])
 
     return kl_divergence
 
@@ -161,7 +161,7 @@ def vae_lower_bound(gen_params, rec_params, data, N):
     # 5 - return an average estimate (per batch point) of the lower bound
     # by substracting the KL to the data dependent term
     # This is equation 12 form the given assignment
-    lower_bound_estimate = N * np.mean(np.log(decoder_output) - kl_divergence)
+    lower_bound_estimate = N * np.mean(np.log(decoder_output) - kl_divergence.reshape(-1,1))
 
     return lower_bound_estimate
 
@@ -235,6 +235,7 @@ if __name__ == "__main__":
     for epoch in range(num_epochs):
         elbo_est = 0.0
 
+        #print('before:', flattened_current_params[:3])
         for n_batch in range(int(np.ceil(N / batch_size))):
             batch = np.arange(
                 batch_size * n_batch, np.minimum(N, batch_size * (n_batch + 1))
@@ -242,13 +243,15 @@ if __name__ == "__main__":
 
             # Compute the noisy gradients
             grad = objective_grad(flattened_current_params)
+            #print('grad:', grad[:3])
+            #print('n_batch - {}:'.format(n_batch), flattened_current_params[:3])
 
             # TODO Use the estimated noisy gradient in grad to update the paramters using the ADAM updates
             elbo_est += objective(flattened_current_params)
 
             # ADAM step
             m = beta_1 * m + (1 - beta_1) * grad
-            v = beta_2 * v + (1 - beta_2) * grad**2
+            v = beta_2 * v + (1 - beta_2) * np.square(grad)**2
             hat_m = m / (1 - beta_1**t)
             hat_v = v / (1 - beta_2**t)
             flattened_current_params -= np.divide(
@@ -260,7 +263,6 @@ if __name__ == "__main__":
         print("Epoch: %d ELBO: %e" % (epoch, elbo_est / np.ceil(N / batch_size)))
 
     # We obtain the final trained parameters
-
     gen_params, rec_params = unflat_params(flattened_current_params)
 
     # ----- TASK 3.1 ----
@@ -277,10 +279,16 @@ if __name__ == "__main__":
     created_images = neural_net_predict(rec_params, sampled_latent_variable)
 
     # Concatenate in a single image
-    todo
+    big_img = np.array([])
+    for i in range(0, 21, 5):
+        row = np.concatenate(created_images[i:i+5], axis=0)
+        big_img = np.append(big_img, row.reshape((1,-1)))
+    big_img = big_img.reshape((28*5, 28*5))
 
-    # Save images
-    save_images(created_images, path_created_images)
+    # Save image
+    save_images(big_img, path_created_images)
+
+    print('3.1 Done!')
 
     # TODO Generate image reconstructions for the first 10 test images (use neural_net_predict for each model)
     # and save them alongside with the original image using save_images
