@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
     # Training parameters
     batch_size = 200
-    num_epochs = 1
+    num_epochs = 30
     learning_rate = 0.001
 
     # ADAM parameters
