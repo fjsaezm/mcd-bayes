@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
     # Training parameters
     batch_size = 200
-    num_epochs = 30
+    num_epochs = 1
     learning_rate = 0.001
 
     # ADAM parameters
@@ -337,8 +337,8 @@ if __name__ == "__main__":
 
         # Obtain the means of each representation
         D = np.shape(encoder_output_1)[-1] // 2
-        mean1 = encoder_output_1[:, :D]
-        mean2 = encoder_output_2[:, :D]
+        mean1 = encoder_output_1[:D]
+        mean2 = encoder_output_2[:D]
 
         # Interpolate the means
         z_interpolations = np.array([
@@ -347,10 +347,10 @@ if __name__ == "__main__":
         ])
 
         # Obtain the interpolated images from the interpolated Z
-        interpolated_imgs = [
+        interpolated_imgs = np.array([
             neural_net_predict(gen_params, z)
             for z in z_interpolations
-        ]
+        ])
 
         # Save images
-        save_images(concatenated, "output/3_3_{}.png".format(i))
+        save_images(interpolated_imgs, "output/3_3_{}.png".format(i+1))
