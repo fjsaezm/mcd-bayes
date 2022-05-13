@@ -82,7 +82,7 @@ def sample_latent_variables_from_posterior(encoder_output):
     mean, log_std = encoder_output[:, :D], encoder_output[:, D:]
 
     # This is equation 15 form the given assignment
-    sampled = mean + np.multiply(np.exp(log_std), np.random.randn(mean.shape[0], mean.shape[1]))
+    sampled = mean + np.exp(log_std) * npr.randn(*mean.shape)
 
     return sampled
 
@@ -103,18 +103,20 @@ def bernoulli_log_prob(targets, logits):
     eval_sigmoid = sigmoid(logits)
 
     # This is equation 3 form the given assignment
-    bernuilli_log_probs = [
-        np.prod(
-            np.multiply(targets_row, eval_sigmoid_row)
-            + np.multiply(1 - targets_row, 1 - eval_sigmoid_row)
+    bernuilli_log_probs = np.array([
+        np.sum(
+            np.log(
+                targets_row * eval_sigmoid_row
+                + (1 - targets_row) * (1 - eval_sigmoid_row)
+            )
         )
         for targets_row, eval_sigmoid_row in zip(targets, eval_sigmoid)
-    ]
+    ])
 
     return bernuilli_log_probs
 
 
-# This evaluates the KL between q and the prior
+# This function evaluates the KL between q and the prior
 
 
 def compute_KL(q_means_and_log_stds):
@@ -129,7 +131,7 @@ def compute_KL(q_means_and_log_stds):
 
     # This is equation 12 form the given assignment
     kl_divergence = np.array([
-        0.5 * np.sum(np.exp(log_std_row) + np.square(mean_row)**2 - 1 - log_std_row)
+        0.5 * np.sum( np.exp(2*log_std_row) + mean_row**2 - 1 - 2*log_std_row)
         for mean_row, log_std_row in zip(mean, log_std)
     ])
 
@@ -144,32 +146,40 @@ def vae_lower_bound(gen_params, rec_params, data, N):
 
     # 1 - compute the encoder output using neural_net_predict given the data and rec_params
     encoder_output = neural_net_predict(params=rec_params, inputs=data)
+    # print('1 - encoder_output: ', encoder_output)
 
     # 2 - sample the latent variables associated to the batch in data
     #     (use sample_latent_variables_from_posterior and the encoder output)
     sampled_latent_variable = sample_latent_variables_from_posterior(encoder_output)
+    # print('2 - sampled_latent_variable: ', sampled_latent_variable)
 
     # 3 - use the sampled latent variables to reconstruct the image and to compute the log_prob of the actual data
     #     (use neural_net_predict for that)
     decoder_output = neural_net_predict(
         params=gen_params, inputs=sampled_latent_variable
     )
+    # print('3 - decoder_output: ', decoder_output)
+
+    # Apply sigmoid to obtain log-probabilities 
+    log_prob = bernoulli_log_prob(data, decoder_output)
+    # print('3.2 - log_prob: ', log_prob)
 
     # 4 - compute the KL divergence between q(z|x) and the prior (use compute_KL for that)
     kl_divergence = compute_KL(encoder_output)
+    # print('4 - kl_divergence: ', kl_divergence)
 
     # 5 - return an average estimate (per batch point) of the lower bound
     # by substracting the KL to the data dependent term
     # This is equation 12 form the given assignment
-    lower_bound_estimate = N * np.mean(np.log(decoder_output) - kl_divergence.reshape(-1,1))
+    lower_bound_estimate = np.mean(log_prob - kl_divergence)
+    # print('5 - lower_bound_estimate: ', lower_bound_estimate)
 
     return lower_bound_estimate
-
 
 if __name__ == "__main__":
 
     # Model hyper-parameters
-    npr.seed(2**32 - 1)  # We fix the random seed for reproducibility
+    npr.seed(0)  # We fix the random seed for reproducibility
 
     latent_dim = 50
     data_dim = 784  # How many pixels in each image (28x28).
@@ -220,9 +230,9 @@ if __name__ == "__main__":
         return vae_lower_bound(gen_params, rec_params, images, N)
 
     # Get gradients of objective using autograd.
-    objective_grad = grad(objective)
+    objective_grad = grad(objective) 
     flattened_current_params = flattened_combined_params_init
-
+    
     # ADAM parameters
     t = 1
 
@@ -235,7 +245,7 @@ if __name__ == "__main__":
     for epoch in range(num_epochs):
         elbo_est = 0.0
 
-        #print('before:', flattened_current_params[:3])
+        #print('efore:', flattened_current_params[:3])
         for n_batch in range(int(np.ceil(N / batch_size))):
             batch = np.arange(
                 batch_size * n_batch, np.minimum(N, batch_size * (n_batch + 1))
@@ -243,65 +253,104 @@ if __name__ == "__main__":
 
             # Compute the noisy gradients
             grad = objective_grad(flattened_current_params)
-            #print('grad:', grad[:3])
-            #print('n_batch - {}:'.format(n_batch), flattened_current_params[:3])
+            # print('1 - grad: ', grad)
 
             # TODO Use the estimated noisy gradient in grad to update the paramters using the ADAM updates
-            elbo_est += objective(flattened_current_params)
 
             # ADAM step
             m = beta_1 * m + (1 - beta_1) * grad
-            v = beta_2 * v + (1 - beta_2) * np.square(grad)**2
+            v = beta_2 * v + (1 - beta_2) * grad**2
             hat_m = m / (1 - beta_1**t)
             hat_v = v / (1 - beta_2**t)
-            flattened_current_params -= np.divide(
-                alpha * hat_m, np.sqrt(hat_v) + epsilon
-            )
+            # print('2 - hat m, v: ', hat_m, hat_v)
 
+            flattened_current_params += alpha * hat_m / (np.sqrt(hat_v) + epsilon)
+            # print('3 - flattened_current_params: ', flattened_current_params)
+            elbo_est += objective(flattened_current_params)
+            # print('4 - elbo_est: ', elbo_est)
+
+            # a=a
             t += 1
 
         print("Epoch: %d ELBO: %e" % (epoch, elbo_est / np.ceil(N / batch_size)))
 
+    print('Train finished! {} epochs in total.'.format(num_epochs))
+
     # We obtain the final trained parameters
     gen_params, rec_params = unflat_params(flattened_current_params)
 
-    # ----- TASK 3.1 ----
-    # TODO Generate 25 images from prior (use neural_net_predict) and save them using save_images
-    path_created_images = "data/3_1.png"
+    # -------------------------- TASK 3.1 --------------------------
+    # TODO Generate 25 images from prior (use neural_net_predict)
+    # and save them using save_images
     n_images = 25
+    
+    # Apply autoencoder with noise images
+    sampled_z = npr.randn(25, latent_dim)
+    sampled_x = neural_net_predict(gen_params, sampled_z)
+    created_images = sigmoid(sampled_x)
 
-    # Sample z form prior, N(0,1)
-    noise_images = [npr.randn(28, 28) for _ in range(n_images)]
+    # Save images
+    save_images(created_images, "output/3_1.png")
 
-    # Apply autoencoder with noise iamges
-    encoder_output = neural_net_predict(gen_params, noise_images)
-    sampled_latent_variable = sample_latent_variables_from_posterior(encoder_output)
-    created_images = neural_net_predict(rec_params, sampled_latent_variable)
-
-    # Concatenate in a single image
-    big_img = np.array([])
-    for i in range(0, 21, 5):
-        row = np.concatenate(created_images[i:i+5], axis=0)
-        big_img = np.append(big_img, row.reshape((1,-1)))
-    big_img = big_img.reshape((28*5, 28*5))
-
-    # Save image
-    save_images(big_img, path_created_images)
-
-    print('3.1 Done!')
-
-    # TODO Generate image reconstructions for the first 10 test images (use neural_net_predict for each model)
+    # -------------------------- TASK 3.2 --------------------------
+    # TODO Generate image reconstructions for the first 10 test images
+    # (use neural_net_predict for each model)
     # and save them alongside with the original image using save_images
 
+    # Obtain the images and reshape them.
+    # reshaped_images = test_images[:10].reshape(-1, 28*28)
+
+    # Apply autoencoder to obtain images reconstrucions
+    encoder_output = neural_net_predict(rec_params, test_images[:10])
+    sampled_z = sample_latent_variables_from_posterior(encoder_output)
+    sampled_x = neural_net_predict(gen_params, sampled_z)
+    reconstructed_images = sigmoid(sampled_x)
+
+    # Concatenate images and save them
+    concatenated = np.append(
+        test_images[:10],
+        reconstructed_images,
+        axis=0
+    )
+
+    save_images(concatenated, "output/3_2.png")
+
+    # -------------------------- TASK 3.3 --------------------------
+    # TODO Generate 5 interpolations from the first test image to the second test image,
+    # for the third to the fourth and so on until 5 interpolations
+    # are computed in latent space and save them using save images.
+    # Use a different file name to store the images of each iterpolation.
+    # To interpolate from  image I to image G use a convex conbination. Namely,
+    # I * s + (1-s) * G where s is a sequence of numbers from 0 to 1 obtained by numpy.linspace
+    # Use mean of the recognition model as the latent representation.
+
+    # Initialize parameters
     num_interpolations = 5
-    for i in range(5):
+    n_interpolation_steps = 25
 
-        # TODO Generate 5 interpolations from the first test image to the second test image,
-        # for the third to the fourth and so on until 5 interpolations
-        # are computed in latent space and save them using save images.
-        # Use a different file name to store the images of each iterpolation.
-        # To interpolate from  image I to image G use a convex conbination. Namely,
-        # I * s + (1-s) * G where s is a sequence of numbers from 0 to 1 obtained by numpy.linspace
-        # Use mean of the recognition model as the latent representation.
+    for i in range(num_interpolations):
+        img1, img2 = test_images[2*i: 2*i+2]
 
-        pass
+        # Obtain the latent representations of each image
+        encoder_output_1 = neural_net_predict(rec_params, img1)
+        encoder_output_2 = neural_net_predict(rec_params, img2)
+
+        # Obtain the means of each representation
+        D = np.shape(encoder_output_1)[-1] // 2
+        mean1 = encoder_output_1[:, :D]
+        mean2 = encoder_output_2[:, :D]
+
+        # Interpolate the means
+        z_interpolations = np.array([
+            (1 - s) * mean1 + s * mean2
+            for s in np.linspace(0.0, 1.0, num=n_interpolation_steps)
+        ])
+
+        # Obtain the interpolated images from the interpolated Z
+        interpolated_imgs = [
+            neural_net_predict(gen_params, z)
+            for z in z_interpolations
+        ]
+
+        # Save images
+        save_images(concatenated, "output/3_3_{}.png".format(i))
