@@ -36,7 +36,15 @@ def relu(x):
 
 
 def init_net_params(layer_sizes, scale=1e-2):
+    """Initializes neural network parameters
 
+    Args:
+        layer_sizes (int): number of layers of the target NN
+        scale (float, optional): Scale of the parameters. Defaults to 1e-2.
+
+    Returns:
+        list: list of the parameters returned
+    """
     """Build a (weights, biases) tuples for all layers."""
     # layer_sizes is a list with the sizes of each layer
 
@@ -52,10 +60,15 @@ def init_net_params(layer_sizes, scale=1e-2):
 
 
 def neural_net_predict(params, inputs):
+    """Pass the input through a neural network (with ReLus) using the parameters passed
 
-    """Params is a list of (weights, bias) tuples.
-    inputs is an (N x D) matrix.
-    Applies relu to every layer but the last."""
+    Args:
+        params (list[Tuple]): Parameters to use of the neural network 
+        inputs (np.ndarray[np.ndarray]): (N x D) matrix of the data
+
+    Returns:
+        np.ndarray[np.ndarray]: Output of the neural network
+    """
 
     for W, b in params[:-1]:
         outputs = np.dot(inputs, W) + b  # linear transformation
@@ -73,9 +86,14 @@ def neural_net_predict(params, inputs):
 
 
 def sample_latent_variables_from_posterior(encoder_output):
-    # TODO use the reparametrization trick to generate one sample from q(z|x) per each batch datapoint
-    # use npr.randn for that.
-    # The output of this function is a matrix of size the batch x the number of latent dimensions
+    """Use the reparametrization trick to generate one sample from q(z|x) per each batch datapoint
+
+    Args:
+        encoder_output (np.ndarray): Output from the encoder
+
+    Returns:
+        np.npdarray: sampled latent variables
+    """ 
 
     # Params of a diagonal Gaussian.
     D = np.shape(encoder_output)[-1] // 2
@@ -91,19 +109,28 @@ def sample_latent_variables_from_posterior(encoder_output):
 
 
 def bernoulli_log_prob(targets, logits):
-    # TODO compute the log probability of the targets given the
-    # generator output specified in logits
-    # sum the probabilities across the dimensions of each image in the batch.
-    # The output of this function should be a vector of size the batch size
+    """
+    Compute the log probability of the targets given the
+    generator output specified in logits
+    sum the probabilities across the dimensions of each image in the batch.
+    The output of this function should be a vector of size the batch size
 
-    # logits are in R, this is the output of the neuroal network, f(z).
+    Args:
+        targets (np.ndarray): targets to apply the log prob
+        logits (np.ndarray): output of the NN representing probabilities
+
+    Returns:
+        np.ndarray: log likelihood of the Bernoulli
+    """   
+
+    # logits are in R, this is the output of the neuronal network, f(z).
     # Targets must be between 0 and 1, these are the observations, x.
 
     # Pre-evaluate the sigmoid
     eval_sigmoid = sigmoid(logits)
 
     # This is equation 3 form the given assignment
-    bernuilli_log_probs = np.array([
+    bernoulli_log_probs = np.array([
         np.sum(
             np.log(
                 targets_row * eval_sigmoid_row
@@ -113,18 +140,27 @@ def bernoulli_log_prob(targets, logits):
         for targets_row, eval_sigmoid_row in zip(targets, eval_sigmoid)
     ])
 
-    return bernuilli_log_probs
+    return bernoulli_log_probs
 
 
 # This function evaluates the KL between q and the prior
 
 
 def compute_KL(q_means_and_log_stds):
-    # TODO compute the KL divergence between q(z|x)
-    # and the prior (use a standard Gaussian for the prior)
-    # Use the fact that the KL divervence is the sum of KL divergence
-    # of the marginals if q and p factorize
-    # The output of this function should be a vector of size the batch size
+    """
+    Compute the KL divergence between q(z|x)
+    and the prior (use a standard Gaussian for the prior)
+    Uses the fact that the KL divervence is the sum of KL divergence
+    of the marginals if q and p factorize
+    The output of this function should be a vector of size the batch size
+
+    Args:
+        q_means_and_log_stds (np.ndarray): distribution to compute 
+                                           the KL with a standard gaussian
+
+    Returns:
+        np.ndarray: KL divergence 
+    """  
 
     D = np.shape(q_means_and_log_stds)[-1] // 2
     mean, log_std = q_means_and_log_stds[:, :D], q_means_and_log_stds[:, D:]
@@ -142,7 +178,18 @@ def compute_KL(q_means_and_log_stds):
 
 
 def vae_lower_bound(gen_params, rec_params, data, N):
-    # TODO compute a noisy estimate of the lower bound by using a single Monte Carlo sample:
+    """
+    Compute a noisy estimate of the lower bound by using a single Monte Carlo sample
+
+    Args:
+        gen_params (np.ndarray): generative network params
+        rec_params (np.ndarray): encoder network params
+        data (np.ndarray): data matrix
+        N (int): batch size, needed for precision
+
+    Returns:
+        float: Noisy ELBO
+    """ 
 
     # 1 - compute the encoder output using neural_net_predict given the data and rec_params
     encoder_output = neural_net_predict(params=rec_params, inputs=data)
@@ -171,7 +218,8 @@ def vae_lower_bound(gen_params, rec_params, data, N):
     # 5 - return an average estimate (per batch point) of the lower bound
     # by substracting the KL to the data dependent term
     # This is equation 12 form the given assignment
-    lower_bound_estimate = np.mean(log_prob - kl_divergence)
+    # Multiply by N (normalization constant)
+    lower_bound_estimate = N * np.mean(log_prob - kl_divergence)
     # print('5 - lower_bound_estimate: ', lower_bound_estimate)
 
     return lower_bound_estimate
@@ -353,4 +401,4 @@ if __name__ == "__main__":
         ])
 
         # Save images
-        save_images(interpolated_imgs, "output/3_3_{}.png".format(i+1))
+        save_images(sigmoid(interpolated_imgs), "output/3_3_{}.png".format(i+1))
